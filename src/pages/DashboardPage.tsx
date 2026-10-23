@@ -69,6 +69,7 @@ const QUADRANT_META: Record<
 export function DashboardPage() {
   const {
     courses,
+    addCourse,
     useSlipDay,
     renameCourse,
     deleteCourse,
@@ -99,18 +100,29 @@ export function DashboardPage() {
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [editingCourseName, setEditingCourseName] = useState<string>('');
 
+  // מצב להוספת קורס חדש עצמאית
+  const [isNewCourseOpen, setIsNewCourseOpen] = useState(false);
+  const [standaloneCourseForm, setStandaloneCourseForm] = useState({
+    name: '',
+    credits: 3.5,
+    slip_days_total: 2,
+  });
+
   // מצב לעריכת משימה קיימת
   const [editingTask, setEditingTask] = useState<EnrichedTask | null>(null);
 
-  // מצב להוספת משימה ידנית חדשה
+  // מצב להוספת משימה ידנית חדשה (כולל אפשרות ליצירת קורס חדש במקום!)
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
   const [newTaskForm, setNewTaskForm] = useState({
     title: '',
-    course_id: courses[0]?.id || '',
+    course_id: courses[0]?.id || '__new__',
     due_date: new Date(Date.now() + 4 * 86400000).toISOString().slice(0, 10),
     weight_percentage: 10,
     estimated_hours: 6,
     description: '',
+    new_course_name: '',
+    new_course_credits: 3.5,
+    new_course_slip_days: 2,
   });
 
   const enrichedTasks = useMemo(
@@ -118,7 +130,6 @@ export function DashboardPage() {
     [tasks, courses]
   );
 
-  // סינון משימות לפי קורס נבחר
   const filteredTasks = useMemo(() => {
     if (selectedCourseFilter === 'all') return enrichedTasks;
     return enrichedTasks.filter((t) => t.course_id === selectedCourseFilter);
@@ -159,22 +170,60 @@ export function DashboardPage() {
     }
   };
 
+  const handleOpenNewTaskModal = () => {
+    setNewTaskForm((prev) => ({
+      ...prev,
+      course_id: courses.length > 0 ? courses[0].id : '__new__',
+    }));
+    setIsNewTaskOpen(true);
+  };
+
   const handleCreateTaskSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskForm.title.trim()) return;
+
+    let targetCourseId = newTaskForm.course_id;
+
+    // אם המשתמש בחר ליצור קורס חדש תוך כדי הוספת המטלה
+    if (targetCourseId === '__new__' || courses.length === 0) {
+      if (!newTaskForm.new_course_name.trim()) return;
+      const createdCourse = addCourse({
+        name: newTaskForm.new_course_name,
+        credits: newTaskForm.new_course_credits,
+        slip_days_total: newTaskForm.new_course_slip_days,
+      });
+      targetCourseId = createdCourse.id;
+    }
+
     addManualTask({
-      ...newTaskForm,
-      course_id: newTaskForm.course_id || courses[0]?.id || 'course-dl',
+      title: newTaskForm.title,
+      course_id: targetCourseId,
+      due_date: newTaskForm.due_date,
+      weight_percentage: newTaskForm.weight_percentage,
+      estimated_hours: newTaskForm.estimated_hours,
+      description: newTaskForm.description,
     });
+
     setIsNewTaskOpen(false);
     setNewTaskForm({
       title: '',
-      course_id: courses[0]?.id || '',
+      course_id: targetCourseId,
       due_date: new Date(Date.now() + 4 * 86400000).toISOString().slice(0, 10),
       weight_percentage: 10,
       estimated_hours: 6,
       description: '',
+      new_course_name: '',
+      new_course_credits: 3.5,
+      new_course_slip_days: 2,
     });
+  };
+
+  const handleCreateStandaloneCourse = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!standaloneCourseForm.name.trim()) return;
+    addCourse(standaloneCourseForm);
+    setStandaloneCourseForm({ name: '', credits: 3.5, slip_days_total: 2 });
+    setIsNewCourseOpen(false);
   };
 
   return (
@@ -207,7 +256,7 @@ export function DashboardPage() {
             </span>
 
             <button
-              onClick={() => setIsNewTaskOpen(true)}
+              onClick={handleOpenNewTaskModal}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 transition text-xs font-medium text-slate-100 cursor-pointer"
             >
               <Plus className="w-4 h-4 text-indigo-400" />
@@ -243,7 +292,6 @@ export function DashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-        {/* התראת סנכרון חכמה */}
         {syncAlert && (
           <div className="p-4 rounded-xl bg-indigo-500/15 border border-indigo-500/40 flex items-center justify-between text-indigo-200 text-sm">
             <div className="flex items-center gap-3">
@@ -497,13 +545,22 @@ export function DashboardPage() {
             </div>
 
             <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 space-y-4">
-              <div>
-                <h3 className="font-bold text-base text-white">
-                  ניהול קורסים וימי חסד (Slip Days)
-                </h3>
-                <p className="text-xs text-slate-400">
-                  לחץ על סמל העיפרון ליד כל קורס כדי לשנות את שמו
-                </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-base text-white">
+                    ניהול קורסים וימי חסד
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    ערוך שם קורס או הוסף קורס חדש
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsNewCourseOpen(true)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>קורס חדש</span>
+                </button>
               </div>
 
               <div className="space-y-3">
@@ -697,7 +754,7 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* מודאל הוספת מטלה ידנית */}
+      {/* מודאל הוספת מטלה ידנית (כולל יצירת קורס חדש במקום!) */}
       {isNewTaskOpen && (
         <div
           dir="rtl"
@@ -724,7 +781,7 @@ export function DashboardPage() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs text-slate-400">קורס</label>
+              <label className="text-xs text-slate-400">שיוך לקורס</label>
               <select
                 value={newTaskForm.course_id}
                 onChange={(e) =>
@@ -737,8 +794,76 @@ export function DashboardPage() {
                     {c.name}
                   </option>
                 ))}
+                <option value="__new__" className="font-bold text-indigo-400">
+                  + הוסף קורס חדש שלא ברשימה...
+                </option>
               </select>
             </div>
+
+            {/* שדות שנפתחים אוטומטית אם בוחרים "+ הוסף קורס חדש" */}
+            {(newTaskForm.course_id === '__new__' || courses.length === 0) && (
+              <div className="p-3.5 rounded-xl bg-indigo-950/20 border border-indigo-500/30 space-y-3">
+                <p className="text-xs font-semibold text-indigo-300">
+                  פרטי הקורס החדש:
+                </p>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-slate-400">שם הקורס</label>
+                  <input
+                    type="text"
+                    required
+                    value={newTaskForm.new_course_name}
+                    onChange={(e) =>
+                      setNewTaskForm({
+                        ...newTaskForm,
+                        new_course_name: e.target.value,
+                      })
+                    }
+                    placeholder="למשל: מבוא להסתברות / מערכות הפעלה"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-slate-400">
+                      נקודות זכות (נק&quot;ז)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="1"
+                      max="10"
+                      value={newTaskForm.new_course_credits}
+                      onChange={(e) =>
+                        setNewTaskForm({
+                          ...newTaskForm,
+                          new_course_credits: Number(e.target.value),
+                        })
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-slate-400">
+                      ימי חסד בסמסטר
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="14"
+                      value={newTaskForm.new_course_slip_days}
+                      onChange={(e) =>
+                        setNewTaskForm({
+                          ...newTaskForm,
+                          new_course_slip_days: Number(e.target.value),
+                        })
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
@@ -801,7 +926,92 @@ export function DashboardPage() {
                 type="submit"
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white cursor-pointer"
               >
-                הוסף מטלה
+                שמור והוסף
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* מודאל הוספת קורס חדש עצמאית */}
+      {isNewCourseOpen && (
+        <div
+          dir="rtl"
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <form
+            onSubmit={handleCreateStandaloneCourse}
+            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl"
+          >
+            <h3 className="text-base font-bold text-white">הוספת קורס חדש</h3>
+
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">שם הקורס</label>
+              <input
+                type="text"
+                required
+                value={standaloneCourseForm.name}
+                onChange={(e) =>
+                  setStandaloneCourseForm({
+                    ...standaloneCourseForm,
+                    name: e.target.value,
+                  })
+                }
+                placeholder="למשל: הוגנות אלגוריתמית"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400">נקודות זכות (נק&quot;ז)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="1"
+                  max="10"
+                  value={standaloneCourseForm.credits}
+                  onChange={(e) =>
+                    setStandaloneCourseForm({
+                      ...standaloneCourseForm,
+                      credits: Number(e.target.value),
+                    })
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400">ימי חסד בסמסטר</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="14"
+                  value={standaloneCourseForm.slip_days_total}
+                  onChange={(e) =>
+                    setStandaloneCourseForm({
+                      ...standaloneCourseForm,
+                      slip_days_total: Number(e.target.value),
+                    })
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsNewCourseOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300 cursor-pointer"
+              >
+                ביטול
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white cursor-pointer"
+              >
+                צור קורס
               </button>
             </div>
           </form>

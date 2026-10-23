@@ -3,6 +3,16 @@ import type { Course } from '../types/database';
 
 const STORAGE_KEY = 'academic_flow_courses_v1';
 
+const COURSE_PALETTE = [
+  '#8B5CF6',
+  '#3B82F6',
+  '#10B981',
+  '#F59E0B',
+  '#EC4899',
+  '#06B6D4',
+  '#F43F5E',
+];
+
 export const INITIAL_DEMO_COURSES: Course[] = [
   {
     id: 'course-dl',
@@ -67,6 +77,31 @@ export function useCourses() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(courses));
   }, [courses]);
 
+  const addCourse = (newCourseData: {
+    name: string;
+    credits: number;
+    slip_days_total: number;
+    moodle_course_code?: string;
+  }): Course => {
+    const color = COURSE_PALETTE[courses.length % COURSE_PALETTE.length];
+    const created: Course = {
+      id: `course-custom-${Date.now()}`,
+      user_id: 'demo-user',
+      moodle_course_code:
+        newCourseData.moodle_course_code?.trim() ||
+        `C-${Math.floor(100 + Math.random() * 900)}`,
+      name: newCourseData.name.trim(),
+      credits: Number(newCourseData.credits) || 3.0,
+      color,
+      slip_days_total: Number(newCourseData.slip_days_total) || 0,
+      slip_days_used: 0,
+      is_setup_complete: true,
+    };
+
+    setCourses((prev) => [...prev, created]);
+    return created;
+  };
+
   const useSlipDay = (courseId: string) => {
     setCourses((prev) =>
       prev.map((course) => {
@@ -120,6 +155,7 @@ export function useCourses() {
   return {
     courses,
     setCourses,
+    addCourse,
     useSlipDay,
     renameCourse,
     deleteCourse,
