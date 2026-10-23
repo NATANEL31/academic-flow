@@ -8,6 +8,10 @@ import {
   Flame,
   Calendar,
   Sparkles,
+  Plus,
+  SlidersHorizontal,
+  Link2,
+  RotateCcw,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -26,6 +30,7 @@ import {
   calculateWeeklyWorkload,
 } from '../utils/priorityEngine';
 import type { EnrichedTask, EisenhowerQuadrant } from '../utils/priorityEngine';
+import { OnboardingWizard } from './OnboardingWizard';
 
 const QUADRANT_META: Record<
   EisenhowerQuadrant,
@@ -58,18 +63,42 @@ const QUADRANT_META: Record<
 };
 
 export function DashboardPage() {
-  const { courses, useSlipDay } = useCourses();
+  const {
+    courses,
+    useSlipDay,
+    mergeImportedCourses,
+    resetCoursesToDemo,
+  } = useCourses();
   const {
     tasks,
     lastSyncedAt,
     syncAlert,
     setSyncAlert,
     toggleTaskStatus,
+    updateTask,
+    addManualTask,
+    mergeImportedTasks,
     simulateMoodleSync,
+    resetTasksToDemo,
   } = useTasks();
 
   const [activeView, setActiveView] = useState<'list' | 'matrix'>('list');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+
+  // מצב לעריכת משימה קיימת
+  const [editingTask, setEditingTask] = useState<EnrichedTask | null>(null);
+
+  // מצב להוספת משימה ידנית חדשה
+  const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
+  const [newTaskForm, setNewTaskForm] = useState({
+    title: '',
+    course_id: courses[0]?.id || '',
+    due_date: new Date(Date.now() + 4 * 86400000).toISOString().slice(0, 10),
+    weight_percentage: 10,
+    estimated_hours: 6,
+    description: '',
+  });
 
   const enrichedTasks = useMemo(
     () => prioritizeTasks(tasks, courses),
@@ -92,7 +121,31 @@ export function DashboardPage() {
     setTimeout(() => {
       simulateMoodleSync();
       setIsSyncing(false);
-    }, 600);
+    }, 500);
+  };
+
+  const handleResetDemo = () => {
+    resetCoursesToDemo();
+    resetTasksToDemo();
+    setSyncAlert('הנתונים אופסו חזרה למצב הדמו ההתחלתי.');
+  };
+
+  const handleCreateTaskSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTaskForm.title.trim()) return;
+    addManualTask({
+      ...newTaskForm,
+      course_id: newTaskForm.course_id || courses[0]?.id || 'course-dl',
+    });
+    setIsNewTaskOpen(false);
+    setNewTaskForm({
+      title: '',
+      course_id: courses[0]?.id || '',
+      due_date: new Date(Date.now() + 4 * 86400000).toISOString().slice(0, 10),
+      weight_percentage: 10,
+      estimated_hours: 6,
+      description: '',
+    });
   };
 
   return (
@@ -119,17 +172,42 @@ export function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-slate-400 hidden sm:inline">
-              סנכרון אחרון מול Moodle: <strong className="text-slate-200">{lastSyncedAt}</strong>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="text-xs text-slate-400 hidden md:inline ml-2">
+              סנכרון אחרון: <strong className="text-slate-200">{lastSyncedAt}</strong>
             </span>
+
+            <button
+              onClick={() => setIsNewTaskOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 transition text-xs font-medium text-slate-100 cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-indigo-400" />
+              <span>מטלה חדשה</span>
+            </button>
+
+            <button
+              onClick={() => setIsWizardOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 transition text-xs font-medium text-slate-100 cursor-pointer"
+            >
+              <Link2 className="w-4 h-4 text-emerald-400" />
+              <span>חיבור קישור Moodle (.ics)</span>
+            </button>
+
             <button
               onClick={handleSyncClick}
               disabled={isSyncing}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition text-sm font-medium text-white shadow-lg shadow-indigo-600/25 cursor-pointer disabled:opacity-60"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition text-xs font-semibold text-white shadow-lg shadow-indigo-600/25 cursor-pointer disabled:opacity-60"
             >
               <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>סנכרן עכשיו מול Moodle</span>
+              <span>הדמיית סנכרון חי</span>
+            </button>
+
+            <button
+              onClick={handleResetDemo}
+              title="איפוס לנתוני הדמו ההתחלתיים"
+              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -197,15 +275,19 @@ export function DashboardPage() {
           </div>
         </section>
 
-        {/* גריד מרכזי: משימות ומטריצה (2 עמודות) + רדאר עומסים וקורסים (עמודה 1) */}
+        {/* גריד מרכזי */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* אזור המשימות והמטריצה */}
           <div className="lg:col-span-2 space-y-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white">
-                תעדוף משימות חכם (Priority Engine)
-              </h2>
-              <div className="inline-flex rounded-xl bg-slate-900 p-1 border border-slate-800">
+              <div>
+                <h2 className="text-lg font-bold text-white">
+                  תעדוף משימות חכם (Priority Engine)
+                </h2>
+                <p className="text-xs text-slate-400">
+                  לחץ על סמל העריכה בכל משימה כדי לשנות משקל בציון או שעות ולראות את הציון מתעדכן חי
+                </p>
+              </div>
+              <div className="inline-flex rounded-xl bg-slate-900 p-1 border border-slate-800 shrink-0">
                 <button
                   onClick={() => setActiveView('list')}
                   className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
@@ -224,7 +306,7 @@ export function DashboardPage() {
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  מטריצת אייזנהאואר (4 רביעים)
+                  מטריצת אייזנהאואר
                 </button>
               </div>
             </div>
@@ -236,6 +318,7 @@ export function DashboardPage() {
                     key={task.id}
                     task={task}
                     onToggle={() => toggleTaskStatus(task.id)}
+                    onEdit={() => setEditingTask(task)}
                   />
                 ))}
               </div>
@@ -271,6 +354,7 @@ export function DashboardPage() {
                               task={task}
                               compact
                               onToggle={() => toggleTaskStatus(task.id)}
+                              onEdit={() => setEditingTask(task)}
                             />
                           ))
                         )}
@@ -282,9 +366,8 @@ export function DashboardPage() {
             )}
           </div>
 
-          {/* עמודה שמאלית: רדאר עומסים שבועי + מעקב קורסים וימי חסד */}
+          {/* עמודה שמאלית: רדאר עומסים + קורסים */}
           <div className="space-y-6">
-            {/* רדאר עומסים שבועי */}
             <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -334,7 +417,6 @@ export function DashboardPage() {
               </div>
             </div>
 
-            {/* קורסים וניהול ימי חסד (Slip Days) */}
             <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 space-y-4">
               <div>
                 <h3 className="font-bold text-base text-white">
@@ -364,8 +446,7 @@ export function DashboardPage() {
                             {course.name}
                           </p>
                           <p className="text-xs text-slate-400">
-                            קוד מודל: {course.moodle_course_code} • {course.credits}{' '}
-                            נק&quot;ז
+                            קוד: {course.moodle_course_code} • {course.credits} נק&quot;ז
                           </p>
                         </div>
                       </div>
@@ -384,9 +465,7 @@ export function DashboardPage() {
                           </button>
                         </div>
                       ) : (
-                        <span className="text-xs text-slate-500">
-                          ללא ימי חסד
-                        </span>
+                        <span className="text-xs text-slate-500">ללא ימי חסד</span>
                       )}
                     </div>
                   );
@@ -396,6 +475,199 @@ export function DashboardPage() {
           </div>
         </div>
       </main>
+
+      {/* אשף ייבוא מ-Moodle */}
+      <OnboardingWizard
+        isOpen={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+        onCompleteImport={(newCourses, newTasks) => {
+          mergeImportedCourses(newCourses);
+          mergeImportedTasks(newTasks);
+          setSyncAlert(
+            `ייבוא Moodle הושלם! נוספו/עודכנו ${newCourses.length} קורסים ו-${newTasks.length} מטלות.`
+          );
+        }}
+      />
+
+      {/* מודאל עריכת משקל ושעות למשימה קיימת */}
+      {editingTask && (
+        <div
+          dir="rtl"
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <h3 className="text-base font-bold text-white">
+              כיול מדדי משימה: {editingTask.title}
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">
+                  משקל המטלה בציון הסופי של הקורס (%):{' '}
+                  <strong className="text-white">
+                    {editingTask.weight_percentage}%
+                  </strong>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="40"
+                  step="1"
+                  value={editingTask.weight_percentage}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setEditingTask({ ...editingTask, weight_percentage: val });
+                    updateTask(editingTask.id, { weight_percentage: val });
+                  }}
+                  className="w-full accent-indigo-500 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">
+                  הערכת שעות עבודה נדרשות:{' '}
+                  <strong className="text-white">
+                    {editingTask.estimated_hours} שעות
+                  </strong>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="30"
+                  step="0.5"
+                  value={editingTask.estimated_hours}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setEditingTask({ ...editingTask, estimated_hours: val });
+                    updateTask(editingTask.id, { estimated_hours: val });
+                  }}
+                  className="w-full accent-indigo-500 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setEditingTask(null)}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white cursor-pointer"
+              >
+                שמור וסגור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* מודאל הוספת מטלה ידנית */}
+      {isNewTaskOpen && (
+        <div
+          dir="rtl"
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <form
+            onSubmit={handleCreateTaskSubmit}
+            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl"
+          >
+            <h3 className="text-base font-bold text-white">הוספת מטלה חדשה</h3>
+
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">שם המטלה</label>
+              <input
+                type="text"
+                required
+                value={newTaskForm.title}
+                onChange={(e) =>
+                  setNewTaskForm({ ...newTaskForm, title: e.target.value })
+                }
+                placeholder="למשל: הכנה לבוחן אמצע / הגשת תרגיל 3"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400">קורס</label>
+              <select
+                value={newTaskForm.course_id}
+                onChange={(e) =>
+                  setNewTaskForm({ ...newTaskForm, course_id: e.target.value })
+                }
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+              >
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400">תאריך הגשה</label>
+                <input
+                  type="date"
+                  required
+                  value={newTaskForm.due_date}
+                  onChange={(e) =>
+                    setNewTaskForm({ ...newTaskForm, due_date: e.target.value })
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400">משקל בציון (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={newTaskForm.weight_percentage}
+                  onChange={(e) =>
+                    setNewTaskForm({
+                      ...newTaskForm,
+                      weight_percentage: Number(e.target.value),
+                    })
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400">שעות עבודה</label>
+                <input
+                  type="number"
+                  min="0.5"
+                  step="0.5"
+                  value={newTaskForm.estimated_hours}
+                  onChange={(e) =>
+                    setNewTaskForm({
+                      ...newTaskForm,
+                      estimated_hours: Number(e.target.value),
+                    })
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3">
+              <button
+                type="button"
+                onClick={() => setIsNewTaskOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300 cursor-pointer"
+              >
+                ביטול
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white cursor-pointer"
+              >
+                הוסף מטלה
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
@@ -404,10 +676,12 @@ function TaskCard({
   task,
   compact = false,
   onToggle,
+  onEdit,
 }: {
   task: EnrichedTask;
   compact?: boolean;
   onToggle: () => void;
+  onEdit: () => void;
 }) {
   const isDone = task.status === 'submitted';
   const quadMeta = QUADRANT_META[task.quadrant];
@@ -485,20 +759,29 @@ function TaskCard({
           </div>
         </div>
 
-        {/* ציון תעדוף משוקלל */}
-        <div className="flex flex-col items-center justify-center px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 shrink-0">
-          <span className="text-[10px] text-slate-400">ציון דחיפות</span>
-          <span
-            className={`text-base font-bold ${
-              task.priorityScore >= 75
-                ? 'text-rose-400'
-                : task.priorityScore >= 55
-                ? 'text-amber-400'
-                : 'text-indigo-400'
-            }`}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={onEdit}
+            title="כייל משקל ושעות עבודה"
+            className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
           >
-            {task.priorityScore}
-          </span>
+            <SlidersHorizontal className="w-4 h-4" />
+          </button>
+
+          <div className="flex flex-col items-center justify-center px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800">
+            <span className="text-[10px] text-slate-400">ציון דחיפות</span>
+            <span
+              className={`text-base font-bold ${
+                task.priorityScore >= 75
+                  ? 'text-rose-400'
+                  : task.priorityScore >= 55
+                  ? 'text-amber-400'
+                  : 'text-indigo-400'
+              }`}
+            >
+              {task.priorityScore}
+            </span>
+          </div>
         </div>
       </div>
     </div>

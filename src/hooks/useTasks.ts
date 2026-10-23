@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { addDays } from 'date-fns';
 import type { Task, TaskStatus } from '../types/database';
 import { parseMoodleIcs } from '../services/moodleIcsParser';
 
+const STORAGE_KEY = 'academic_flow_tasks_v1';
 const now = new Date();
 
 export const INITIAL_DEMO_TASKS: Task[] = [
@@ -89,11 +90,26 @@ export const INITIAL_DEMO_TASKS: Task[] = [
 ];
 
 export function useTasks() {
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_DEMO_TASKS);
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return INITIAL_DEMO_TASKS;
+      }
+    }
+    return INITIAL_DEMO_TASKS;
+  });
+
   const [lastSyncedAt, setLastSyncedAt] = useState<string>(
     new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
   );
   const [syncAlert, setSyncAlert] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  }, [tasks]);
 
   const toggleTaskStatus = (taskId: string) => {
     setTasks((prev) =>
@@ -106,23 +122,74 @@ export function useTasks() {
     );
   };
 
-  const updateTaskMetrics = (
-    taskId: string,
-    weight_percentage: number,
-    estimated_hours: number
-  ) => {
+  const updateTask = (taskId: string, updates: Partial<Task>) => {
     setTasks((prev) =>
-      prev.map((task) =>
-        task.id === taskId
-          ? { ...task, weight_percentage, estimated_hours }
-          : task
-      )
+      prev.map((task) => (task.id === taskId ? { ...task, ...updates } : task))
     );
   };
 
-  /**
-   * מדמה שאיבת קובץ .ics חי ממודל כדי להציג למגייס איך המפענח עובד בזמן אמת
-   */
+  const addManualTask = (newTaskData: {
+    title: string;
+    course_id: string;
+    due_date: string;
+    weight_percentage: number;
+    estimated_hours: number;
+    description: string;
+  }) => {
+    const created: Task = {
+      id: `manual-${Date.now()}`,
+      user_id: 'demo-user',
+      course_id: newTaskData.course_id,
+      external_uid: null,
+      title: newTaskData.title,
+      description: newTaskData.description || null,
+      due_date: new Date(newTaskData.due_date).toISOString(),
+      previous_due_date: null,
+      source: 'manual',
+      status: 'todo',
+      weight_percentage: newTaskData.weight_percentage,
+      estimated_hours: newTaskData.estimated_hours,
+      used_slip_days: 0,
+      notes: null,
+    };
+    setTasks((prev) => [created, ...prev]);
+  };
+
+  const mergeImportedTasks = (importedTasks: Task[]) => {
+    setTasks((prev) => {
+      const existingByUid = new Map(
+        prev.filter((t) => t.external_uid).map((t) => [t.external_uid!, t])
+      );
+
+      const updatedList = [...prev];
+
+      for (const incoming of importedTasks) {
+        if (incoming.external_uid && existingByUid.has(incoming.external_uid)) {
+          // עדכון תאריך הגשה בלבד בלי לדרוס משקל ושעות שהוזנו ידנית
+          const existing = existingByUid.get(incoming.external_uid)!;
+          const idx = updatedList.findIndex((t) => t.id === existing.id);
+          if (idx !== -1) {
+            updatedList[idx] = {
+              ...existing,
+              due_date: incoming.due_date,
+              title: incoming.title,
+            };
+          }
+        } else {
+          updatedList.unshift(incoming);
+        }
+      }
+      return updatedList;
+    });
+
+    setLastSyncedAt(
+      new Date().toLocaleTimeString('he-IL', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    );
+  };
+
   const simulateMoodleSync = () => {
     const futureDate = addDays(new Date(), 3);
     const icsDateStr =
@@ -177,13 +244,21 @@ export function useTasks() {
     }
   };
 
+  const resetTasksToDemo = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setTasks(INITIAL_DEMO_TASKS);
+  };
+
   return {
     tasks,
     lastSyncedAt,
     syncAlert,
     setSyncAlert,
     toggleTaskStatus,
-    updateTaskMetrics,
+    updateTask,
+    addManualTask,
+    mergeImportedTasks,
     simulateMoodleSync,
+    resetTasksToDemo,
   };
 }

@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Course } from '../types/database';
+
+const STORAGE_KEY = 'academic_flow_courses_v1';
 
 export const INITIAL_DEMO_COURSES: Course[] = [
   {
@@ -49,7 +51,21 @@ export const INITIAL_DEMO_COURSES: Course[] = [
 ];
 
 export function useCourses() {
-  const [courses, setCourses] = useState<Course[]>(INITIAL_DEMO_COURSES);
+  const [courses, setCourses] = useState<Course[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return INITIAL_DEMO_COURSES;
+      }
+    }
+    return INITIAL_DEMO_COURSES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(courses));
+  }, [courses]);
 
   const useSlipDay = (courseId: string) => {
     setCourses((prev) =>
@@ -65,9 +81,28 @@ export function useCourses() {
     );
   };
 
+  const mergeImportedCourses = (importedCourses: Course[]) => {
+    setCourses((prev) => {
+      const existingMap = new Map(
+        prev.map((c) => [c.moodle_course_code, c])
+      );
+      for (const incoming of importedCourses) {
+        existingMap.set(incoming.moodle_course_code, incoming);
+      }
+      return Array.from(existingMap.values());
+    });
+  };
+
+  const resetCoursesToDemo = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setCourses(INITIAL_DEMO_COURSES);
+  };
+
   return {
     courses,
     setCourses,
     useSlipDay,
+    mergeImportedCourses,
+    resetCoursesToDemo,
   };
 }
