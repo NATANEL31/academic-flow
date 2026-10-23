@@ -122,6 +122,14 @@ export function useTasks() {
     );
   };
 
+  const deleteTask = (taskId: string) => {
+    setTasks((prev) => prev.filter((task) => task.id !== taskId));
+  };
+
+  const deleteTasksByCourse = (courseId: string) => {
+    setTasks((prev) => prev.filter((task) => task.course_id !== courseId));
+  };
+
   const updateTask = (taskId: string, updates: Partial<Task>) => {
     setTasks((prev) =>
       prev.map((task) => (task.id === taskId ? { ...task, ...updates } : task))
@@ -155,32 +163,38 @@ export function useTasks() {
     setTasks((prev) => [created, ...prev]);
   };
 
-  const mergeImportedTasks = (importedTasks: Task[]) => {
-    setTasks((prev) => {
-      const existingByUid = new Map(
-        prev.filter((t) => t.external_uid).map((t) => [t.external_uid!, t])
-      );
+  const mergeImportedTasks = (
+    importedTasks: Task[],
+    replaceExisting: boolean = true
+  ) => {
+    if (replaceExisting) {
+      setTasks(importedTasks);
+    } else {
+      setTasks((prev) => {
+        const existingByUid = new Map(
+          prev.filter((t) => t.external_uid).map((t) => [t.external_uid!, t])
+        );
 
-      const updatedList = [...prev];
+        const updatedList = [...prev];
 
-      for (const incoming of importedTasks) {
-        if (incoming.external_uid && existingByUid.has(incoming.external_uid)) {
-          // עדכון תאריך הגשה בלבד בלי לדרוס משקל ושעות שהוזנו ידנית
-          const existing = existingByUid.get(incoming.external_uid)!;
-          const idx = updatedList.findIndex((t) => t.id === existing.id);
-          if (idx !== -1) {
-            updatedList[idx] = {
-              ...existing,
-              due_date: incoming.due_date,
-              title: incoming.title,
-            };
+        for (const incoming of importedTasks) {
+          if (incoming.external_uid && existingByUid.has(incoming.external_uid)) {
+            const existing = existingByUid.get(incoming.external_uid)!;
+            const idx = updatedList.findIndex((t) => t.id === existing.id);
+            if (idx !== -1) {
+              updatedList[idx] = {
+                ...existing,
+                due_date: incoming.due_date,
+                title: incoming.title,
+              };
+            }
+          } else {
+            updatedList.unshift(incoming);
           }
-        } else {
-          updatedList.unshift(incoming);
         }
-      }
-      return updatedList;
-    });
+        return updatedList;
+      });
+    }
 
     setLastSyncedAt(
       new Date().toLocaleTimeString('he-IL', {
@@ -255,6 +269,8 @@ export function useTasks() {
     syncAlert,
     setSyncAlert,
     toggleTaskStatus,
+    deleteTask,
+    deleteTasksByCourse,
     updateTask,
     addManualTask,
     mergeImportedTasks,

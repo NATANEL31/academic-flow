@@ -12,6 +12,10 @@ import {
   SlidersHorizontal,
   Link2,
   RotateCcw,
+  Trash2,
+  Pencil,
+  Check,
+  Filter,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -66,6 +70,8 @@ export function DashboardPage() {
   const {
     courses,
     useSlipDay,
+    renameCourse,
+    deleteCourse,
     mergeImportedCourses,
     resetCoursesToDemo,
   } = useCourses();
@@ -75,6 +81,8 @@ export function DashboardPage() {
     syncAlert,
     setSyncAlert,
     toggleTaskStatus,
+    deleteTask,
+    deleteTasksByCourse,
     updateTask,
     addManualTask,
     mergeImportedTasks,
@@ -83,8 +91,13 @@ export function DashboardPage() {
   } = useTasks();
 
   const [activeView, setActiveView] = useState<'list' | 'matrix'>('list');
+  const [selectedCourseFilter, setSelectedCourseFilter] = useState<string>('all');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+
+  // מצב לעריכת שם קורס ישירות מהדשבורד
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+  const [editingCourseName, setEditingCourseName] = useState<string>('');
 
   // מצב לעריכת משימה קיימת
   const [editingTask, setEditingTask] = useState<EnrichedTask | null>(null);
@@ -105,12 +118,19 @@ export function DashboardPage() {
     [tasks, courses]
   );
 
+  // סינון משימות לפי קורס נבחר
+  const filteredTasks = useMemo(() => {
+    if (selectedCourseFilter === 'all') return enrichedTasks;
+    return enrichedTasks.filter((t) => t.course_id === selectedCourseFilter);
+  }, [enrichedTasks, selectedCourseFilter]);
+
   const weeklyWorkload = useMemo(
     () => calculateWeeklyWorkload(tasks, 25, 5),
     [tasks]
   );
 
   const openTasks = enrichedTasks.filter((t) => t.status !== 'submitted');
+  const filteredOpenTasks = filteredTasks.filter((t) => t.status !== 'submitted');
   const criticalTasksCount = openTasks.filter(
     (t) => t.quadrant === 'do_first'
   ).length;
@@ -127,7 +147,16 @@ export function DashboardPage() {
   const handleResetDemo = () => {
     resetCoursesToDemo();
     resetTasksToDemo();
+    setSelectedCourseFilter('all');
     setSyncAlert('הנתונים אופסו חזרה למצב הדמו ההתחלתי.');
+  };
+
+  const handleDeleteCourse = (courseId: string) => {
+    deleteCourse(courseId);
+    deleteTasksByCourse(courseId);
+    if (selectedCourseFilter === courseId) {
+      setSelectedCourseFilter('all');
+    }
   };
 
   const handleCreateTaskSubmit = (e: React.FormEvent) => {
@@ -163,7 +192,7 @@ export function DashboardPage() {
                   AcademicFlow
                 </h1>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
-                  Demo Mode פעיל
+                  פעיל
                 </span>
               </div>
               <p className="text-xs text-slate-400">
@@ -266,7 +295,7 @@ export function DashboardPage() {
 
           <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-400">קורסים מסונכרנים ממודל</p>
+              <p className="text-xs text-slate-400">קורסים פעילים</p>
               <p className="text-3xl font-bold mt-1 text-emerald-400">{courses.length}</p>
             </div>
             <div className="w-11 h-11 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
@@ -278,13 +307,13 @@ export function DashboardPage() {
         {/* גריד מרכזי */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-5">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-white">
                   תעדוף משימות חכם (Priority Engine)
                 </h2>
                 <p className="text-xs text-slate-400">
-                  לחץ על סמל העריכה בכל משימה כדי לשנות משקל בציון או שעות ולראות את הציון מתעדכן חי
+                  סנן לפי קורס, כייל משקלים או מחק מטלות שאינן רלוונטיות
                 </p>
               </div>
               <div className="inline-flex rounded-xl bg-slate-900 p-1 border border-slate-800 shrink-0">
@@ -311,16 +340,65 @@ export function DashboardPage() {
               </div>
             </div>
 
+            {/* סרגל סינון לפי קורס */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2">
+              <div className="flex items-center gap-1.5 text-xs text-slate-400 ml-1 shrink-0">
+                <Filter className="w-3.5 h-3.5" />
+                <span>קורס:</span>
+              </div>
+              <button
+                onClick={() => setSelectedCourseFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer shrink-0 border ${
+                  selectedCourseFilter === 'all'
+                    ? 'bg-indigo-600 text-white border-indigo-500'
+                    : 'bg-slate-900/80 text-slate-300 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                הכל ({enrichedTasks.length})
+              </button>
+              {courses.map((course) => {
+                const count = enrichedTasks.filter(
+                  (t) => t.course_id === course.id
+                ).length;
+                const isSelected = selectedCourseFilter === course.id;
+                return (
+                  <button
+                    key={course.id}
+                    onClick={() => setSelectedCourseFilter(course.id)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer shrink-0 border ${
+                      isSelected
+                        ? 'bg-slate-800 text-white border-slate-600 shadow-sm'
+                        : 'bg-slate-900/60 text-slate-400 border-slate-800/80 hover:text-slate-200'
+                    }`}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: course.color }}
+                    />
+                    <span>{course.name}</span>
+                    <span className="text-[10px] opacity-70">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
             {activeView === 'list' ? (
               <div className="space-y-3">
-                {enrichedTasks.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    onToggle={() => toggleTaskStatus(task.id)}
-                    onEdit={() => setEditingTask(task)}
-                  />
-                ))}
+                {filteredTasks.length === 0 ? (
+                  <div className="p-8 rounded-2xl bg-slate-900/40 border border-slate-800 text-center text-sm text-slate-400">
+                    אין משימות להצגה בקורס זה.
+                  </div>
+                ) : (
+                  filteredTasks.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      onToggle={() => toggleTaskStatus(task.id)}
+                      onEdit={() => setEditingTask(task)}
+                      onDelete={() => deleteTask(task.id)}
+                    />
+                  ))
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -328,7 +406,7 @@ export function DashboardPage() {
                   ['do_first', 'schedule', 'quick_task', 'later'] as EisenhowerQuadrant[]
                 ).map((quadKey) => {
                   const meta = QUADRANT_META[quadKey];
-                  const quadTasks = openTasks.filter(
+                  const quadTasks = filteredOpenTasks.filter(
                     (t) => t.quadrant === quadKey
                   );
                   return (
@@ -355,6 +433,7 @@ export function DashboardPage() {
                               compact
                               onToggle={() => toggleTaskStatus(task.id)}
                               onEdit={() => setEditingTask(task)}
+                              onDelete={() => deleteTask(task.id)}
                             />
                           ))
                         )}
@@ -420,10 +499,10 @@ export function DashboardPage() {
             <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800/80 space-y-4">
               <div>
                 <h3 className="font-bold text-base text-white">
-                  קורסים ומכסת ימי חסד (Slip Days)
+                  ניהול קורסים וימי חסד (Slip Days)
                 </h3>
                 <p className="text-xs text-slate-400">
-                  מעקב אחרי ימי איחור מאושרים ללא קנס בכל קורס
+                  לחץ על סמל העיפרון ליד כל קורס כדי לשנות את שמו
                 </p>
               </div>
 
@@ -431,41 +510,89 @@ export function DashboardPage() {
                 {courses.map((course) => {
                   const remainingSlip =
                     course.slip_days_total - course.slip_days_used;
+                  const isEditingThis = editingCourseId === course.id;
+
                   return (
                     <div
                       key={course.id}
-                      className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between gap-3"
+                      className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-2.5"
                     >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className="w-3 h-10 rounded-full shrink-0"
-                          style={{ backgroundColor: course.color }}
-                        />
-                        <div>
-                          <p className="text-sm font-semibold text-white">
-                            {course.name}
-                          </p>
-                          <p className="text-xs text-slate-400">
-                            קוד: {course.moodle_course_code} • {course.credits} נק&quot;ז
-                          </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                          <span
+                            className="w-2.5 h-8 rounded-full shrink-0"
+                            style={{ backgroundColor: course.color }}
+                          />
+                          {isEditingThis ? (
+                            <div className="flex items-center gap-1.5 flex-1">
+                              <input
+                                type="text"
+                                value={editingCourseName}
+                                onChange={(e) =>
+                                  setEditingCourseName(e.target.value)
+                                }
+                                autoFocus
+                                className="w-full bg-slate-900 border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
+                              />
+                              <button
+                                onClick={() => {
+                                  renameCourse(course.id, editingCourseName);
+                                  setEditingCourseId(null);
+                                }}
+                                className="p-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                                title="שמור שם קורס"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-semibold text-white truncate">
+                                  {course.name}
+                                </p>
+                                <button
+                                  onClick={() => {
+                                    setEditingCourseId(course.id);
+                                    setEditingCourseName(course.name);
+                                  }}
+                                  title="שנה שם קורס"
+                                  className="text-slate-500 hover:text-indigo-400 transition cursor-pointer shrink-0"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              <p className="text-xs text-slate-400">
+                                קוד: {course.moodle_course_code} • {course.credits}{' '}
+                                נק&quot;ז
+                              </p>
+                            </div>
+                          )}
                         </div>
+
+                        <button
+                          onClick={() => handleDeleteCourse(course.id)}
+                          title="מחק קורס ומטלותיו"
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
 
-                      {course.slip_days_total > 0 ? (
-                        <div className="text-left shrink-0">
-                          <span className="block text-xs text-slate-400 mb-1">
-                            נותרו {remainingSlip} מתוך {course.slip_days_total} ימי חסד
+                      {course.slip_days_total > 0 && (
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-xs">
+                          <span className="text-slate-400">
+                            נותרו {remainingSlip} מתוך {course.slip_days_total} ימי
+                            חסד
                           </span>
                           <button
                             onClick={() => useSlipDay(course.id)}
                             disabled={remainingSlip === 0}
-                            className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 transition cursor-pointer"
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 transition cursor-pointer"
                           >
                             נצל יום חסד
                           </button>
                         </div>
-                      ) : (
-                        <span className="text-xs text-slate-500">ללא ימי חסד</span>
                       )}
                     </div>
                   );
@@ -480,11 +607,12 @@ export function DashboardPage() {
       <OnboardingWizard
         isOpen={isWizardOpen}
         onClose={() => setIsWizardOpen(false)}
-        onCompleteImport={(newCourses, newTasks) => {
-          mergeImportedCourses(newCourses);
-          mergeImportedTasks(newTasks);
+        onCompleteImport={(newCourses, newTasks, replaceExisting) => {
+          mergeImportedCourses(newCourses, replaceExisting);
+          mergeImportedTasks(newTasks, replaceExisting);
+          setSelectedCourseFilter('all');
           setSyncAlert(
-            `ייבוא Moodle הושלם! נוספו/עודכנו ${newCourses.length} קורסים ו-${newTasks.length} מטלות.`
+            `ייבוא Moodle הושלם! נטענו ${newCourses.length} קורסים ו-${newTasks.length} מטלות.`
           );
         }}
       />
@@ -546,7 +674,18 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex justify-between pt-2">
+              <button
+                onClick={() => {
+                  deleteTask(editingTask.id);
+                  setEditingTask(null);
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 text-xs font-medium cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>מחק מטלה</span>
+              </button>
+
               <button
                 onClick={() => setEditingTask(null)}
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white cursor-pointer"
@@ -677,11 +816,13 @@ function TaskCard({
   compact = false,
   onToggle,
   onEdit,
+  onDelete,
 }: {
   task: EnrichedTask;
   compact?: boolean;
   onToggle: () => void;
   onEdit: () => void;
+  onDelete: () => void;
 }) {
   const isDone = task.status === 'submitted';
   const quadMeta = QUADRANT_META[task.quadrant];
@@ -759,13 +900,21 @@ function TaskCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={onEdit}
             title="כייל משקל ושעות עבודה"
             className="p-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
           >
             <SlidersHorizontal className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={onDelete}
+            title="מחק מטלה"
+            className="p-2 rounded-xl bg-slate-950 hover:bg-rose-500/15 border border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 transition cursor-pointer"
+          >
+            <Trash2 className="w-4 h-4" />
           </button>
 
           <div className="flex flex-col items-center justify-center px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800">

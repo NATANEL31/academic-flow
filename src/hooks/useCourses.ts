@@ -81,11 +81,30 @@ export function useCourses() {
     );
   };
 
-  const mergeImportedCourses = (importedCourses: Course[]) => {
+  const renameCourse = (courseId: string, newName: string) => {
+    if (!newName.trim()) return;
+    setCourses((prev) =>
+      prev.map((course) =>
+        course.id === courseId ? { ...course, name: newName.trim() } : course
+      )
+    );
+  };
+
+  const deleteCourse = (courseId: string) => {
+    setCourses((prev) => prev.filter((course) => course.id !== courseId));
+  };
+
+  const mergeImportedCourses = (
+    importedCourses: Course[],
+    replaceExisting: boolean = true
+  ) => {
+    if (replaceExisting) {
+      setCourses(importedCourses);
+      return;
+    }
+
     setCourses((prev) => {
-      const existingMap = new Map(
-        prev.map((c) => [c.moodle_course_code, c])
-      );
+      const existingMap = new Map(prev.map((c) => [c.moodle_course_code, c]));
       for (const incoming of importedCourses) {
         existingMap.set(incoming.moodle_course_code, incoming);
       }
@@ -102,6 +121,8 @@ export function useCourses() {
     courses,
     setCourses,
     useSlipDay,
+    renameCourse,
+    deleteCourse,
     mergeImportedCourses,
     resetCoursesToDemo,
   };

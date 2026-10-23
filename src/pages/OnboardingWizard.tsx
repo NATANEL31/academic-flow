@@ -29,12 +29,17 @@ interface DiscoveredCourseDraft {
   slipDaysTotal: number;
   color: string;
   tasksCount: number;
+  sampleTasks: string[];
 }
 
 interface OnboardingWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onCompleteImport: (newCourses: Course[], newTasks: Task[]) => void;
+  onCompleteImport: (
+    newCourses: Course[],
+    newTasks: Task[],
+    replaceExisting: boolean
+  ) => void;
 }
 
 export function OnboardingWizard({
@@ -46,6 +51,7 @@ export function OnboardingWizard({
   const [icsUrl, setIcsUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [replaceDemoData, setReplaceDemoData] = useState(true);
 
   const [parsedEvents, setParsedEvents] = useState<ParsedMoodleEvent[]>([]);
   const [courseDrafts, setCourseDrafts] = useState<DiscoveredCourseDraft[]>([]);
@@ -61,23 +67,23 @@ export function OnboardingWizard({
       return;
     }
 
-    const groupedByCourse = new Map<string, number>();
+    const groupedByCourse = new Map<string, string[]>();
     for (const ev of events) {
-      groupedByCourse.set(
-        ev.courseCode,
-        (groupedByCourse.get(ev.courseCode) || 0) + 1
-      );
+      const list = groupedByCourse.get(ev.courseCode) || [];
+      list.push(ev.cleanTitle);
+      groupedByCourse.set(ev.courseCode, list);
     }
 
     const drafts: DiscoveredCourseDraft[] = Array.from(
       groupedByCourse.entries()
-    ).map(([code, count], idx) => ({
+    ).map(([code, titles], idx) => ({
       code,
-      name: `קורס ${code}`,
+      name: '', // ריק כדי שהסטודנט יקליד שם אמיתי או ישתמש בקוד כברירת מחדל
       credits: 3.5,
       slipDaysTotal: 2,
       color: COURSE_COLORS[idx % COURSE_COLORS.length],
-      tasksCount: count,
+      tasksCount: titles.length,
+      sampleTasks: titles.slice(0, 2),
     }));
 
     setParsedEvents(events);
@@ -96,7 +102,6 @@ export function OnboardingWizard({
     setErrorMsg(null);
 
     try {
-      // ניסיון ישיר או דרך Proxy לעקיפת חסימת CORS בדפדפן מול שרתי האוניברסיטה
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(
         icsUrl.trim()
       )}`;
@@ -131,9 +136,12 @@ export function OnboardingWizard({
 
   const handleLoadSampleMoodle = () => {
     const now = new Date();
-    const d1 = addDays(now, 3).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const d2 = addDays(now, 6).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const d3 = addDays(now, 10).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const d1 =
+      addDays(now, 3).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const d2 =
+      addDays(now, 6).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const d3 =
+      addDays(now, 10).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
     const sampleIcs = [
       'BEGIN:VCALENDAR',
@@ -169,7 +177,7 @@ export function OnboardingWizard({
       id: `course-${draft.code.replace(/[^a-zA-Z0-9]/g, '-')}`,
       user_id: 'demo-user',
       moodle_course_code: draft.code,
-      name: draft.name,
+      name: draft.name.trim() || `קורס ${draft.code}`,
       credits: Number(draft.credits),
       color: draft.color,
       slip_days_total: Number(draft.slipDaysTotal),
@@ -198,7 +206,7 @@ export function OnboardingWizard({
       notes: null,
     }));
 
-    onCompleteImport(createdCourses, createdTasks);
+    onCompleteImport(createdCourses, createdTasks, replaceDemoData);
     setStep(1);
     setIcsUrl('');
     onClose();
@@ -224,7 +232,7 @@ export function OnboardingWizard({
                 שלב {step} מתוך 2:{' '}
                 {step === 1
                   ? 'חיבור קישור לוח השנה (.ics)'
-                  : 'השלמת נק"ז וימי חסד לקורסים שזוהו'}
+                  : 'מתן שמות לקורסים והגדרת נק"ז'}
               </p>
             </div>
           </div>
@@ -243,9 +251,18 @@ export function OnboardingWizard({
                 איך מוציאים את הקישור מה-Moodle ב-30 שניות?
               </p>
               <ol className="list-decimal list-inside space-y-1 text-slate-400">
-                <li>היכנס ל-Moodle של האוניברסיטה ולחץ על <strong>לוח שנה (Calendar)</strong>.</li>
-                <li>גלול לתחתית העמוד ולחץ על <strong>ייצוא לוח שנה (Export Calendar)</strong>.</li>
-                <li>בחר &quot;כל האירועים&quot; ו-&quot;60 ימים אחרונים והבאים&quot;, ולחץ על <strong>קבל כתובת URL של לוח השנה</strong>.</li>
+                <li>
+                  היכנס ל-Moodle של האוניברסיטה ולחץ על{' '}
+                  <strong>לוח שנה (Calendar)</strong>.
+                </li>
+                <li>
+                  גלול לתחתית העמוד ולחץ על{' '}
+                  <strong>ייצוא לוח שנה (Export Calendar)</strong>.
+                </li>
+                <li>
+                  בחר &quot;כל האירועים&quot; ו-&quot;60 ימים אחרונים והבאים&quot;,
+                  ולחץ על <strong>קבל כתובת URL של לוח השנה</strong> או הורד קובץ.
+                </li>
               </ol>
             </div>
 
@@ -315,9 +332,9 @@ export function OnboardingWizard({
             <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2.5 text-xs text-emerald-300">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>
-                המפענח זיהה בהצלחה <strong>{courseDrafts.length} קורסים</strong> ו-
-                <strong>{parsedEvents.length} מטלות</strong>! תוכל לתת לכל קורס שם
-                קריא ולהגדיר נק&quot;ז:
+                המפענח זיהה <strong>{courseDrafts.length} קורסים</strong> ו-
+                <strong>{parsedEvents.length} מטלות</strong>! מכיוון שמודל מייצא רק
+                מספר קורס, תן לכל קורס שם קריא לפי המטלות שמופיעות תחתיו:
               </span>
             </div>
 
@@ -325,63 +342,86 @@ export function OnboardingWizard({
               {courseDrafts.map((draft, index) => (
                 <div
                   key={draft.code}
-                  className="p-4 rounded-xl bg-slate-950 border border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center"
+                  className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5"
                 >
-                  <div className="sm:col-span-6 space-y-1">
-                    <label className="text-[11px] text-slate-400">
-                      שם הקורס (קוד מודל: {draft.code} • {draft.tasksCount} מטלות)
-                    </label>
-                    <input
-                      type="text"
-                      value={draft.name}
-                      onChange={(e) => {
-                        const updated = [...courseDrafts];
-                        updated[index].name = e.target.value;
-                        setCourseDrafts(updated);
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                    <div className="sm:col-span-6 space-y-1">
+                      <label className="text-[11px] text-slate-300 font-medium">
+                        שם הקורס (מזהה מודל: {draft.code})
+                      </label>
+                      <input
+                        type="text"
+                        value={draft.name}
+                        placeholder={`הקלד שם לקורס ${draft.code} (למשל: מבני נתונים)`}
+                        onChange={(e) => {
+                          const updated = [...courseDrafts];
+                          updated[index].name = e.target.value;
+                          setCourseDrafts(updated);
+                        }}
+                        className="w-full bg-slate-900 border border-indigo-500/40 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-3 space-y-1">
+                      <label className="text-[11px] text-slate-400">
+                        נקודות זכות (נק&quot;ז)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="1"
+                        max="10"
+                        value={draft.credits}
+                        onChange={(e) => {
+                          const updated = [...courseDrafts];
+                          updated[index].credits = Number(e.target.value);
+                          setCourseDrafts(updated);
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-3 space-y-1">
+                      <label className="text-[11px] text-slate-400">
+                        ימי חסד בסמסטר
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="14"
+                        value={draft.slipDaysTotal}
+                        onChange={(e) => {
+                          const updated = [...courseDrafts];
+                          updated[index].slipDaysTotal = Number(e.target.value);
+                          setCourseDrafts(updated);
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                      />
+                    </div>
                   </div>
 
-                  <div className="sm:col-span-3 space-y-1">
-                    <label className="text-[11px] text-slate-400">
-                      נקודות זכות (נק&quot;ז)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="1"
-                      max="10"
-                      value={draft.credits}
-                      onChange={(e) => {
-                        const updated = [...courseDrafts];
-                        updated[index].credits = Number(e.target.value);
-                        setCourseDrafts(updated);
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-3 space-y-1">
-                    <label className="text-[11px] text-slate-400">
-                      ימי חסד בסמסטר
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="14"
-                      value={draft.slipDaysTotal}
-                      onChange={(e) => {
-                        const updated = [...courseDrafts];
-                        updated[index].slipDaysTotal = Number(e.target.value);
-                        setCourseDrafts(updated);
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
-                    />
-                  </div>
+                  {/* הצגת מטלות לדוגמה מתוך הקורס כדי לעזור לסטודנט לזהות איזה קורס זה */}
+                  <p className="text-[11px] text-slate-400 truncate">
+                    <strong className="text-slate-300">מטלות שזוהו בקורס זה:</strong>{' '}
+                    {draft.sampleTasks.join(' • ')}
+                  </p>
                 </div>
               ))}
             </div>
+
+            {/* בחירה האם להחליף את נתוני הדמו */}
+            <label className="flex items-center gap-2.5 text-xs text-slate-200 cursor-pointer bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+              <input
+                type="checkbox"
+                checked={replaceDemoData}
+                onChange={(e) => setReplaceDemoData(e.target.checked)}
+                className="accent-indigo-500 w-4 h-4 rounded cursor-pointer"
+              />
+              <span>
+                נקה את קורסי ומטלות ההדגמה (Demo) והצג <strong>רק</strong> את
+                הקורסים מהקובץ שהעליתי
+              </span>
+            </label>
 
             <div className="flex items-center justify-between pt-2 border-t border-slate-800">
               <button
