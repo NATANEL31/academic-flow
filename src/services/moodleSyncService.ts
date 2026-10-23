@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseMoodleIcs } from './moodleIcsParser';
 
 const DEFAULT_COURSE_COLORS = [
-  '#3B82F6', '#8B5CF6', '#EC4899', '#10B981', '#F59E0B', '#06B6D4'
+  '#3B82F6', '#7b4de7', '#EC4899', '#10B981', '#F59E0B', '#06B6D4'
 ];
 
 export interface SyncSummary {
